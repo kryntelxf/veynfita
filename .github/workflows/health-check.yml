@@ -1,0 +1,113 @@
+name: VEYNFITA Health Check
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  health-check:
+    name: Build, Run & Health Check
+    runs-on: ubuntu-latest
+
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MYSQL_ROOT_PASSWORD: rootpassword
+          MYSQL_DATABASE: appwrite
+          MYSQL_USER: appwrite
+          MYSQL_PASSWORD: appwrite
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          target: development
+          load: true
+          tags: veynfita:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            TESTING=true
+            VERSION=dev
+            BUILD_TIMESTAMP=$(date -u +%s)
+
+      - name: Run Container
+        run: |
+          docker run -d \
+            --name veynfita \
+            --network ${{ job.container.network }} \
+            -p 80:80 \
+            -e _APP_ENV=development \
+            -e _APP_OPTIONS_ABUSE=disabled \
+            -e _APP_OPTIONS_FUNCTIONS=disabled \
+            -e _APP_DB_HOST=mariadb \
+            -e _APP_DB_PORT=3306 \
+            -e _APP_DB_SCHEMA=appwrite \
+            -e _APP_DB_USER=appwrite \
+            -e _APP_DB_PASS=appwrite \
+            -e _APP_REDIS_HOST=redis \
+            -e _APP_REDIS_PORT=6379 \
+            -e _APP_OPENSSL_KEY_V1=$(openssl rand -hex 64) \
+            veynfita:latest
+
+      - name: Wait for Container to Start
+        run: |
+          echo "⏳ Waiting for container to start..."
+          for i in {1..30}; do
+            if docker ps | grep -q veynfita; then
+              echo "✅ Container is running"
+              break
+            fi
+            sleep 2
+          done
+          docker ps -a
+
+      - name: Health Check Endpoint
+        run: |
+          echo "⏳ Waiting for health endpoint to respond..."
+          for i in {1..20}; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/v1/health || echo "000")
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
+              echo "✅ Health check passed! (HTTP $HTTP_CODE)"
+              exit 0
+            fi
+            echo "Attempt $i/20: HTTP $HTTP_CODE"
+            sleep 3
+          done
+          echo "❌ Health check failed after 20 attempts"
+          echo "--- Container logs ---"
+          docker logs veynfita --tail 50
+          exit 1
+
+      - name: Verify Container Logs
+        run: |
+          echo "--- Last 20 lines of container logs ---"
+          docker logs veynfita --tail 20
