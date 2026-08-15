@@ -1,0 +1,63 @@
+name: VEYNFITA Run Container
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  run-container:
+    name: Build & Run Container
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          target: development
+          load: true
+          tags: veynfita:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            TESTING=true
+            VERSION=dev
+            BUILD_TIMESTAMP=$(date -u +%s)
+
+      - name: Run Container
+        run: |
+          docker run -d \
+            --name veynfita \
+            -p 80:80 \
+            -e _APP_ENV=development \
+            -e _APP_OPTIONS_ABUSE=disabled \
+            -e _APP_OPTIONS_FUNCTIONS=disabled \
+            veynfita:latest
+
+      - name: Wait for Container to Start
+        run: |
+          sleep 10
+          docker ps -a
+
+      - name: Verify Container is Running
+        run: |
+          if docker ps | grep -q veynfita; then
+            echo "✅ Container is running"
+          else
+            echo "❌ Container is not running"
+            docker logs veynfita
+            exit 1
+          fi
+
+      - name: Health Check
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" http://localhost/health || echo "Health check failed"
