@@ -12,6 +12,7 @@ class Core extends Module
     {
         $this->addService('tasks', new Tasks());
         $this->addService('workers', new Workers());
+        $this->addModule('veynfita', new \Appwrite\Platform\Modules\Veynfita\Module());
     }
 
 }
