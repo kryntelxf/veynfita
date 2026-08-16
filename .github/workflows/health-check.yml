@@ -94,7 +94,6 @@ jobs:
             -e _APP_DB_SSL_KEY="" \
             -e _APP_DB_SSL_CERT="" \
             -e _APP_DB_SSL_VERIFY_SERVER_CERT=false \
-            -e _APP_DB_SSL_MODE=disable \
             veynfita:latest
 
       - name: Wait for Container to Start
