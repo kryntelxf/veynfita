@@ -39,6 +39,20 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: DIAGNOSTIC — Check MongoDB container status
+        run: |
+          echo "=== DIAGNOSTIC: MongoDB Container Status ==="
+          docker ps -a
+          echo ""
+          echo "=== DIAGNOSTIC: MongoDB Container Logs ==="
+          docker logs $(docker ps -a --filter "ancestor=mongo:6.0" --format "{{.ID}}") 2>&1 || echo "No MongoDB container found"
+          echo ""
+          echo "=== DIAGNOSTIC: Docker Network ==="
+          docker network ls
+          echo ""
+          echo "=== DIAGNOSTIC: Port Check ==="
+          netstat -tulpn 2>/dev/null | grep 27017 || echo "Port 27017 not listening"
+
       - name: Wait for MongoDB to be ready
         run: |
           echo "⏳ Waiting for MongoDB to be ready..."
@@ -51,6 +65,12 @@ jobs:
             sleep 3
           done
           echo "❌ MongoDB failed to start"
+          echo ""
+          echo "=== DIAGNOSTIC: Final MongoDB Status ==="
+          docker ps -a
+          echo ""
+          echo "=== DIAGNOSTIC: Final MongoDB Logs ==="
+          docker logs $(docker ps -a --filter "ancestor=mongo:6.0" --format "{{.ID}}") 2>&1 || echo "No MongoDB container found"
           exit 1
 
       - name: Build Docker Image
